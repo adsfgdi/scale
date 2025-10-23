@@ -96,7 +96,7 @@ class Visualizer:
     ):
         if not pred.polygon:
             return
-        pts = np.array([[p.x, p.y] for p in pred.polygon.coords])
+        pts = np.array([[p.x, p.y] for p in pred.polygon.to_coords()])
         polygon = MplPolygon(
             pts, closed=True, facecolor=(*color, 0.1), edgecolor=color, linewidth=2
         )
@@ -180,5 +180,5 @@ class Visualizer:
             return None
 
         return domain.Polygon(
-            [domain.Coords(p.x - origin.x, p.y - origin.y) for p in polygon.coords]
+            [domain.Coords(p.x - origin.x, p.y - origin.y) for p in polygon.to_coords()]
         )

@@ -7,8 +7,6 @@ from typing import Protocol, Iterator, Optional
 import numpy as np
 import torch
 from torchvision.ops import nms
-from shapely.geometry import Polygon
-from shapely.ops import unary_union
 
 
 class WSIIterator(Protocol):
@@ -101,19 +99,18 @@ class WSIPredictor:
             return []
 
         preds = sorted(preds, key=lambda x: (x.box.area(), x.conf), reverse=True)
-        result = []
+        result: list[domain.Prediction] = []
         for pred in preds:
             merged = pred
             merged_indices = []
 
             for i, selected_pred in enumerate(result):
                 max_coverage = max(
-                    pred.box.covered_by(selected_pred.box),
-                    selected_pred.box.covered_by(pred.box),
+                    pred.covered_by(selected_pred), selected_pred.covered_by(pred)
                 )
 
                 if max_coverage > coverage_threshold:
-                    merged = self._merge_predictions(merged, selected_pred)
+                    merged = merged.merge_with(selected_pred)
                     merged_indices.append(i)
 
             if merged_indices:
@@ -125,55 +122,13 @@ class WSIPredictor:
 
         return result
 
-    def _merge_predictions(
-        self, pred1: domain.Prediction, pred2: domain.Prediction
-    ) -> domain.Prediction:
-        merged_box = pred1.box.merge_with(pred2.box)
-        merged_conf = max(pred1.conf, pred2.conf)
-        merged_polygon = self._merge_polygons(pred1.polygon, pred2.polygon)
-
-        return domain.Prediction(
-            box=merged_box,
-            conf=merged_conf,
-            polygon=merged_polygon,
-        )
-
-    def _merge_polygons(
-        self,
-        poly_a: Optional[domain.Polygon],
-        poly_b: Optional[domain.Polygon],
-    ) -> Optional[domain.Polygon]:
-        if poly_a is None and poly_b is None:
-            return None
-        if poly_a is None:
-            return poly_b
-        if poly_b is None:
-            return poly_a
-
-        pa = self._to_shapely_polygon(poly_a)
-        pb = self._to_shapely_polygon(poly_b)
-
-        if not pa.is_valid:
-            pa = pa.buffer(0)
-        if not pb.is_valid:
-            pb = pb.buffer(0)
-        merged = unary_union([pa, pb])
-
-        if merged.geom_type == "MultiPolygon":
-            merged = max(merged.geoms, key=lambda g: g.area)
-
-        return domain.Polygon([domain.Coords(x, y) for x, y in merged.exterior.coords])
-
-    def _to_shapely_polygon(self, polygon: domain.Polygon) -> Polygon:
-        return Polygon((p.x, p.y) for p in polygon.coords)
-
     def _to_absolute_polygon(
         self, start: domain.Coords, poly: Optional[domain.Polygon]
     ) -> Optional[domain.Polygon]:
         if not poly:
             return None
 
-        coords = [domain.Coords(c.x + start.x, c.y + start.y) for c in poly.coords]
+        coords = [domain.Coords(c.x + start.x, c.y + start.y) for c in poly.to_coords()]
         return domain.Polygon(coords=coords)
 
     def _to_absolute_box(self, start: domain.Coords, box: domain.Box) -> domain.Box:
