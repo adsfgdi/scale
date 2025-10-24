@@ -2,7 +2,7 @@ import domain
 
 import cv2
 import numpy as np
-from typing import Iterator, Tuple
+from typing import Iterator, Optional, Tuple
 
 from skimage.measure import label, regionprops
 from sklearn.cluster import KMeans
@@ -12,9 +12,12 @@ from cucim.clara import CuImage
 
 
 class WSI:
-    def __init__(self, wsi_path: str, min_sections: int, max_sections: int):
-        self.min_sections = min_sections
-        self.max_sections = max_sections
+    def __init__(
+        self,
+        wsi_path: str,
+        num_sections: Optional[int] = None,
+    ):
+        self.num_sections = num_sections
         self.min_thumb_width = 1024
 
         self.wsi = CuImage(wsi_path)
@@ -71,10 +74,14 @@ class WSI:
         return img
 
     def extract_first_biopsy_section(self) -> np.ndarray:
-        first_bound = self.extract_first_biopsy_bound()
+        return self.extract_biopsy_section(0)
+
+    def extract_biopsy_section(self, index: int) -> np.ndarray:
+        bound = self.extract_biopsy_bound(index)
+
         crop = self.wsi.read_region(
-            location=(first_bound.start.x, first_bound.start.y),
-            size=first_bound.size(),
+            location=(bound.start.x, bound.start.y),
+            size=bound.size(),
             level=0,
         )
 
@@ -95,11 +102,13 @@ class WSI:
         return sections
 
     def extract_first_biopsy_bound(self) -> domain.Box:
-        return self.extract_biopsy_bounds()[0]
+        return self.extract_biopsy_bound(0)
+
+    def extract_biopsy_bound(self, index: int) -> domain.Box:
+        return self.extract_biopsy_bounds()[index]
 
     def extract_biopsy_bounds(self) -> list[domain.Box]:
-        tissue_regions = self._detect_tissue_regions(self.thumb)
-        clusters = self._cluster_biopsies(tissue_regions)
+        clusters = self._cluster_biopsies(self.thumb)
 
         return self._extract_biopsy_bounds(clusters, self.thumb_size)
 
@@ -140,37 +149,57 @@ class WSI:
         labeled_image = label(tissue_mask)
         regions = regionprops(labeled_image)
 
-        min_area = 1000
+        areas = np.array([r.area for r in regions])
+        min_area = np.median(areas) * 0.3
+
         return [r for r in regions if r.area >= min_area]
 
-    def _cluster_biopsies(self, regions):
-        n_min, n_max = self.min_sections, self.max_sections
+    def _cluster_biopsies(self, img):
+        regions = self._detect_tissue_regions(img)
+
+        if not regions:
+            return []
 
         centroids = np.array([[r.centroid[1], r.centroid[0]] for r in regions])
-        n_max = min(n_max, len(regions) - 1)
 
-        best_score, best_n, best_labels = -1, n_min, None
+        if self.num_sections:
+            n_clusters = min(self.num_sections, len(regions))
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(centroids)
+        else:
+            labels = self._find_optimal_clusters(centroids)
+
+        n_clusters = len(set(labels))
+        clusters = [[] for _ in range(n_clusters)]
+        for region, label in zip(regions, labels):
+            clusters[label].append(region)
+
+        return clusters
+
+    def _find_optimal_clusters(self, centroids):
+        n_min = 1
+        n_max = n_max = min(16, len(centroids) - 1)
+
+        best_score = -1
+        best_labels = None
 
         for n in range(n_min, n_max + 1):
-            labels = KMeans(n_clusters=n, random_state=42, n_init=10).fit_predict(
-                centroids
-            )
+            kmeans = KMeans(n_clusters=n, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(centroids)
+
             if len(set(labels)) < 2:
                 continue
 
             score = silhouette_score(centroids, labels)
             if score > best_score:
-                best_score, best_n, best_labels = score, n, labels
+                best_score = score
+                best_labels = labels
 
         if best_labels is None:
-            best_labels = np.zeros(len(regions), dtype=int)
-            best_n = 1
+            kmeans = KMeans(n_clusters=n_min, random_state=42, n_init=10)
+            best_labels = kmeans.fit_predict(centroids)
 
-        clusters = [[] for _ in range(best_n)]
-        for region, label in zip(regions, best_labels):
-            clusters[label].append(region)
-
-        return clusters
+        return best_labels
 
     def _create_wsi_thumbnail(self):
         target_level = self._choose_best_level()
