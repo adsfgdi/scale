@@ -46,9 +46,11 @@ class Polygon:
 
         if new_polygon.geom_type == "MultiPolygon":
             largest = max(new_polygon.geoms, key=lambda g: g.area)  # type: ignore
-            return Polygon(list(largest.exterior.coords))
+            coords = [Coords(x, y) for x, y in largest.exterior.coords]
+            return Polygon(coords)
 
-        return Polygon(list(new_polygon.exterior.coords))  # type: ignore
+        coords = [Coords(x, y) for x, y in new_polygon.exterior.coords]  # type: ignore
+        return Polygon(coords)
 
     def to_coords(self) -> list[Coords]:
         return list(Coords(c[0], c[1]) for c in self._polygon.exterior.coords)
@@ -147,3 +149,50 @@ class Prediction:
             merged_poly = self.polygon or other.polygon
 
         return Prediction(box=merged_box, conf=merged_conf, polygon=merged_poly)
+
+
+def predictions_to_dict(predictions_by_class: dict[str, list[Prediction]]) -> dict:
+    data = {}
+
+    for cls_name, preds in predictions_by_class.items():
+        data[cls_name] = []
+        for p in preds:
+            pred_dict = {
+                "box": {
+                    "start": {"x": p.box.start.x, "y": p.box.start.y},
+                    "end": {"x": p.box.end.x, "y": p.box.end.y},
+                },
+                "polygon": (
+                    [{"x": c.x, "y": c.y} for c in p.polygon.to_coords()]
+                    if p.polygon
+                    else None
+                ),
+                "conf": p.conf,
+            }
+            data[cls_name].append(pred_dict)
+    return data
+
+
+def predictions_from_dict(data: dict) -> dict[str, list[Prediction]]:
+    predictions_by_class: dict[str, list[Prediction]] = {}
+
+    for cls_name, preds in data.items():
+        predictions_by_class[cls_name] = []
+
+        for pdict in preds:
+            box_data = pdict["box"]
+            start = Coords(**box_data["start"])
+            end = Coords(**box_data["end"])
+            box = Box(start=start, end=end)
+
+            polygon_data = pdict.get("polygon")
+            polygon = None
+            if polygon_data:
+                polygon = Polygon([Coords(**c) for c in polygon_data])
+
+            conf = pdict["conf"]
+            predictions_by_class[cls_name].append(
+                Prediction(box=box, polygon=polygon, conf=conf)
+            )
+
+    return predictions_by_class
