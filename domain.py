@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional
+import json
 from shapely.geometry import Polygon as ShapelyPolygon
 
 
@@ -196,3 +197,17 @@ def predictions_from_dict(data: dict) -> dict[str, list[Prediction]]:
             )
 
     return predictions_by_class
+
+
+def predictions_to_json(
+    predictions_by_class: dict[str, list[Prediction]], path: str
+) -> None:
+    data = predictions_to_dict(predictions_by_class)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+
+def predictions_from_json(path: str) -> dict[str, list[Prediction]]:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return predictions_from_dict(data)
