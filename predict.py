@@ -23,8 +23,8 @@ class Model(Protocol):
 
 @dataclass
 class Postprocessing:
-    nms_thres: float
-    cov_thres: float
+    nms_thres: Optional[float]
+    cov_thres: Optional[float]
 
 
 @dataclass
@@ -47,17 +47,15 @@ class WSIPredictor:
         self.postprocess_settings = postprocess_settings
 
     def predict_first_section(self) -> dict[str, list[domain.Prediction]]:
-        result = {}
-
         preds_all = self._predict_first_section()
-        for cls_name, preds in preds_all.items():
-            settings = self.postprocess_settings[cls_name]
-            if settings is None:
-                raise ValueError(
-                    f"No postprocessing settings found for class '{cls_name}'"
-                )
+        return self._postprocess(preds_all)
 
-            result[cls_name] = self._postprocess_predictions(preds, settings)
+    def _postprocess(
+        self, preds_all: dict[str, list[domain.Prediction]]
+    ) -> dict[str, list[domain.Prediction]]:
+        result = {}
+        for cls_name, preds in preds_all.items():
+            result[cls_name] = self._postprocess_predictions(preds, cls_name)
 
         return result
 
@@ -86,11 +84,18 @@ class WSIPredictor:
         return predictions
 
     def _postprocess_predictions(
-        self, preds: list[domain.Prediction], cfg: Postprocessing
+        self, preds: list[domain.Prediction], cls_name: str
     ) -> list[domain.Prediction]:
-        result = self.__bbox_nms(preds, cfg.nms_thres)
-        result = self.__merge_by_coverage(result, cfg.cov_thres)
-        return result
+        settings = self.postprocess_settings[cls_name]
+        if settings is None:
+            raise ValueError(f"No postprocessing settings found for class '{cls_name}'")
+
+        if settings.nms_thres:
+            preds = self.__bbox_nms(preds, settings.nms_thres)
+        if settings.cov_thres:
+            preds = self.__merge_by_coverage(preds, settings.cov_thres)
+
+        return preds
 
     def __bbox_nms(self, preds: list[domain.Prediction], iou_threshold: float):
         if not preds:
