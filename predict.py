@@ -62,10 +62,7 @@ class WSIPredictor:
         return result
 
     def _predict_first_section(self) -> dict[str, list[domain.Prediction]]:
-        size_to_models = defaultdict(list[Model])
-        for cfg in self.model_configs:
-            size_to_models[cfg.window_size].append(cfg.model)
-
+        size_to_models = self._group_models_by_window_size()
         predictions = defaultdict(list[domain.Prediction])
 
         for window_size, models in size_to_models.items():
@@ -138,6 +135,12 @@ class WSIPredictor:
                 result.append(pred)
 
         return result
+
+    def _group_models_by_window_size(self) -> dict[int, list[Model]]:
+        size_to_models = defaultdict(list[Model])
+        for cfg in self.model_configs:
+            size_to_models[cfg.window_size].append(cfg.model)
+        return size_to_models
 
     def _to_absolute_polygon(
         self, start: domain.Coords, poly: Optional[domain.Polygon]
