@@ -22,6 +22,12 @@ class Model(Protocol):
 
 
 @dataclass
+class Postprocessing:
+    nms_thres: float
+    cov_thres: float
+
+
+@dataclass
 class ModelConfig:
     model: Model
     window_size: int
@@ -32,15 +38,28 @@ class WSIPredictor:
         self,
         wsi_iterator: WSIIterator,
         model_configs: list[ModelConfig],
+        postprocess_settings: dict[str, Postprocessing],
         overlap_ratio: float = 0.5,
     ):
         self.iterator = wsi_iterator
         self.model_configs = model_configs
         self.overlap_ratio = overlap_ratio
+        self.postprocess_settings = postprocess_settings
 
     def predict_first_section(self) -> dict[str, list[domain.Prediction]]:
-        preds = self._predict_first_section()
-        return self._postprocess_predictions(preds)
+        result = {}
+
+        preds_all = self._predict_first_section()
+        for cls_name, preds in preds_all.items():
+            settings = self.postprocess_settings[cls_name]
+            if settings is None:
+                raise ValueError(
+                    f"No postprocessing settings found for class '{cls_name}'"
+                )
+
+            result[cls_name] = self._postprocess_predictions(preds, settings)
+
+        return result
 
     def _predict_first_section(self) -> dict[str, list[domain.Prediction]]:
         size_to_models = defaultdict(list[Model])
@@ -70,18 +89,16 @@ class WSIPredictor:
         return predictions
 
     def _postprocess_predictions(
-        self, preds: dict[str, list[domain.Prediction]]
-    ) -> dict[str, list[domain.Prediction]]:
-        filtered_preds = {}
-
-        for pathology, pred in preds.items():
-            result = self.__bbox_nms(pred, 0.7)
-            result = self.__merge_by_coverage(result, 0.5)
-            filtered_preds[pathology] = result
-
-        return filtered_preds
+        self, preds: list[domain.Prediction], cfg: Postprocessing
+    ) -> list[domain.Prediction]:
+        result = self.__bbox_nms(preds, cfg.nms_thres)
+        result = self.__merge_by_coverage(result, cfg.cov_thres)
+        return result
 
     def __bbox_nms(self, preds: list[domain.Prediction], iou_threshold: float):
+        if not preds:
+            return []
+
         boxes = torch.tensor(
             [[p.box.start.x, p.box.start.y, p.box.end.x, p.box.end.y] for p in preds]
         )
