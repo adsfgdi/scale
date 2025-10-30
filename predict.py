@@ -75,13 +75,13 @@ class WSIPredictor:
         filtered_preds = {}
 
         for pathology, pred in preds.items():
-            result = self.__nms(pred, 0.5)
+            result = self.__bbox_nms(pred, 0.7)
             result = self.__merge_by_coverage(result, 0.5)
             filtered_preds[pathology] = result
 
         return filtered_preds
 
-    def __nms(self, preds: list[domain.Prediction], iou_threshold: float):
+    def __bbox_nms(self, preds: list[domain.Prediction], iou_threshold: float):
         boxes = torch.tensor(
             [[p.box.start.x, p.box.start.y, p.box.end.x, p.box.end.y] for p in preds]
         )
