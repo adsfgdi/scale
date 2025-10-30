@@ -47,7 +47,11 @@ class YOLOModel:
                 polygon = None
                 if has_masks:
                     coords = [domain.Coords(float(x), float(y)) for x, y in polygons[i]]
-                    polygon = domain.Polygon(coords=coords)
+                    try:
+                        polygon = domain.Polygon(coords=coords)
+                    except domain.BadPolygonError as e:
+                        print(e)
+                        continue
 
                 parsed_box = domain.Prediction(
                     domain.Box(start=domain.Coords(x1, y1), end=domain.Coords(x2, y2)),

@@ -9,11 +9,23 @@ class Coords:
     x: float
     y: float
 
+    def __repr__(self):
+        return f"({self.x:.2f}, {self.y:.2f})"
+
+
+class BadPolygonError(Exception):
+    def __init__(self, coords: list[Coords]):
+        self.coords = coords
+        super().__init__()
+
+    def __str__(self):
+        return f"Bad coords: {self.coords}"
+
 
 class Polygon:
     def __init__(self, coords: list[Coords]):
         if len(coords) < 3:
-            raise ValueError("Polygon must have at least 3 points")
+            raise BadPolygonError(coords)
 
         polygon = ShapelyPolygon([(c.x, c.y) for c in coords])
 
@@ -23,6 +35,9 @@ class Polygon:
         if polygon.geom_type == "MultiPolygon":
             largest = max(polygon.geoms, key=lambda g: g.area)  # type: ignore
             polygon = ShapelyPolygon(list(largest.exterior.coords))
+
+        if not polygon.is_valid or polygon.is_empty or polygon.area == 0:
+            raise BadPolygonError(coords)
 
         self._polygon = polygon
 
