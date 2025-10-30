@@ -21,6 +21,9 @@ class BadPolygonError(Exception):
     def __str__(self):
         return f"Bad coords: {self.coords}"
 
+    def __repr__(self):
+        return f"BadPolygonError(coords={self.coords})"
+
 
 class Polygon:
     def __init__(self, coords: list[Coords]):
@@ -40,6 +43,18 @@ class Polygon:
             raise BadPolygonError(coords)
 
         self._polygon = polygon
+
+    def __repr__(self):
+        coords = list(self._polygon.exterior.coords)
+        n = len(coords)
+        if n > 6:
+            preview = (
+                ", ".join(f"({x:.1f},{y:.1f})" for x, y in coords[:3])
+                + f", ... ({coords[-1][0]:.1f},{coords[-1][1]:.1f})"
+            )
+        else:
+            preview = ", ".join(f"({x:.1f},{y:.1f})" for x, y in coords)
+        return f"Polygon(n={n}, area={self._polygon.area:.1f}, coords=[{preview}])"
 
     def area(self) -> float:
         return self._polygon.area
@@ -63,13 +78,12 @@ class Polygon:
         if new_polygon.geom_type == "MultiPolygon":
             largest = max(new_polygon.geoms, key=lambda g: g.area)  # type: ignore
             coords = [Coords(x, y) for x, y in largest.exterior.coords]
-            return Polygon(coords)
-
-        coords = [Coords(x, y) for x, y in new_polygon.exterior.coords]  # type: ignore
+        else:
+            coords = [Coords(x, y) for x, y in new_polygon.exterior.coords]  # type: ignore
         return Polygon(coords)
 
     def to_coords(self) -> list[Coords]:
-        return list(Coords(c[0], c[1]) for c in self._polygon.exterior.coords)
+        return [Coords(c[0], c[1]) for c in self._polygon.exterior.coords]
 
     def _area(self) -> float:
         return self._polygon.area
@@ -83,15 +97,18 @@ class Box:
         self.start = start
         self.end = end
 
+    def __repr__(self):
+        w, h = self.size()
+        return f"Box(start={self.start}, end={self.end}, size=({w:.1f}×{h:.1f}))"
+
     def size(self) -> tuple[float, float]:
         width = self.end.x - self.start.x
         height = self.end.y - self.start.y
         return width, height
 
     def area(self) -> float:
-        width = self.end.x - self.start.x
-        height = self.end.y - self.start.y
-        return width * height
+        w, h = self.size()
+        return w * h
 
     def center(self) -> Coords:
         return Coords(
@@ -116,7 +133,7 @@ class Box:
             return 0.0
 
         union_area = self.area() + other.area() - inter_area
-        return inter_area / union_area if union_area > 0 else 0
+        return inter_area / union_area if union_area > 0 else 0.0
 
     def covered_by(self, other: "Box") -> float:
         inter_area = self.intersection_area_with(other)
@@ -144,6 +161,14 @@ class Prediction:
         self.polygon = polygon
         self.conf = conf
 
+    def __repr__(self):
+        poly_info = (
+            "None"
+            if self.polygon is None
+            else f"Polygon(area={self.polygon.area():.1f})"
+        )
+        return f"Prediction(conf={self.conf:.2f}, box={self.box}, polygon={poly_info})"
+
     def iou_with(self, other: "Prediction") -> float:
         if self.polygon and other.polygon:
             return self.polygon.iou_with(other.polygon)
@@ -158,7 +183,6 @@ class Prediction:
         merged_box = self.box.merge_with(other.box)
         merged_conf = max(self.conf, other.conf)
 
-        merged_poly = None
         if self.polygon and other.polygon:
             merged_poly = self.polygon.merge_with(other.polygon)
         else:
@@ -202,10 +226,9 @@ def predictions_from_dict(data: dict) -> dict[str, list[Prediction]]:
             box = Box(start=start, end=end)
 
             polygon_data = pdict.get("polygon")
-            polygon = None
-            if polygon_data:
-                polygon = Polygon([Coords(**c) for c in polygon_data])
-
+            polygon = (
+                Polygon([Coords(**c) for c in polygon_data]) if polygon_data else None
+            )
             conf = pdict["conf"]
             predictions_by_class[cls_name].append(
                 Prediction(box=box, polygon=polygon, conf=conf)
