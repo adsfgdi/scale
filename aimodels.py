@@ -1,4 +1,4 @@
-import domain
+from . import domain
 
 import numpy as np
 from collections import defaultdict

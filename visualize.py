@@ -1,4 +1,4 @@
-import domain
+from . import domain
 
 from typing import Protocol, Optional
 import colorsys

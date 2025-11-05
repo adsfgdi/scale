@@ -1,4 +1,4 @@
-import domain
+from . import domain
 
 import cv2
 import numpy as np

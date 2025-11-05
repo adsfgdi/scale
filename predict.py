@@ -1,4 +1,4 @@
-import domain
+from . import domain
 
 from dataclasses import dataclass
 from collections import defaultdict
