@@ -3,10 +3,21 @@ from . import domain
 from dataclasses import dataclass
 from collections import defaultdict
 from typing import Protocol, Iterator, Optional
+import time
+from contextlib import contextmanager
 
 import numpy as np
 import torch
 from torchvision.ops import nms
+
+
+@contextmanager
+def timer(name: str, enabled: bool = True):
+    start = time.perf_counter()
+    yield
+    if enabled:
+        elapsed = time.perf_counter() - start
+        print(f"[TIMER] {name}: {elapsed:.3f} s")
 
 
 class WSIIterator(Protocol):
@@ -40,18 +51,22 @@ class WSIPredictor:
         model_configs: list[ModelConfig],
         postprocess_settings: dict[str, Postprocessing],
         overlap_ratio: float = 0.5,
+        enable_timing: bool = False,
     ):
         self.iterator = wsi_iterator
         self.model_configs = model_configs
         self.overlap_ratio = overlap_ratio
         self.postprocess_settings = postprocess_settings
+        self.enable_timing = enable_timing
 
     def predict_section(self, section_index: int) -> dict[str, list[domain.Prediction]]:
-        preds_all = self._predict_section(sec_index=section_index)
+        with timer(f"_predict_section(index={section_index})", self.enable_timing):
+            preds_all = self._predict_section(sec_index=section_index)
         return self._postprocess(preds_all)
 
     def predict_first_section(self) -> dict[str, list[domain.Prediction]]:
-        preds_all = self._predict_section(sec_index=0)
+        with timer("_predict_section(index=0)", self.enable_timing):
+            preds_all = self._predict_section(sec_index=0)
         return self._postprocess(preds_all)
 
     def _postprocess(
@@ -59,7 +74,8 @@ class WSIPredictor:
     ) -> dict[str, list[domain.Prediction]]:
         result = {}
         for cls_name, preds in preds_all.items():
-            result[cls_name] = self._postprocess_predictions(preds, cls_name)
+            with timer(f"_postprocess_predictions({cls_name})", self.enable_timing):
+                result[cls_name] = self._postprocess_predictions(preds, cls_name)
 
         return result
 
