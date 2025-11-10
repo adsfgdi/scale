@@ -10,8 +10,8 @@ from torchvision.ops import nms
 
 
 class WSIIterator(Protocol):
-    def iter_first_section_bgr(
-        self, window_size: int, overlap_ratio: float
+    def iter_section_bgr(
+        self, index: int, window_size: int, overlap_ratio: float
     ) -> Iterator[tuple[np.ndarray, domain.Coords]]: ...
 
 
@@ -46,8 +46,12 @@ class WSIPredictor:
         self.overlap_ratio = overlap_ratio
         self.postprocess_settings = postprocess_settings
 
+    def predict_section(self, section_index: int) -> dict[str, list[domain.Prediction]]:
+        preds_all = self._predict_section(sec_index=section_index)
+        return self._postprocess(preds_all)
+
     def predict_first_section(self) -> dict[str, list[domain.Prediction]]:
-        preds_all = self._predict_first_section()
+        preds_all = self._predict_section(sec_index=0)
         return self._postprocess(preds_all)
 
     def _postprocess(
@@ -59,12 +63,13 @@ class WSIPredictor:
 
         return result
 
-    def _predict_first_section(self) -> dict[str, list[domain.Prediction]]:
+    def _predict_section(self, sec_index: int) -> dict[str, list[domain.Prediction]]:
         size_to_models = self._group_models_by_window_size()
         predictions = defaultdict(list[domain.Prediction])
 
         for window_size, models in size_to_models.items():
-            for region, start in self.iterator.iter_first_section_bgr(
+            for region, start in self.iterator.iter_section_bgr(
+                index=sec_index,
                 window_size=window_size,
                 overlap_ratio=self.overlap_ratio,
             ):

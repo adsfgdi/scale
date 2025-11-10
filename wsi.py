@@ -11,6 +11,9 @@ from sklearn.metrics import silhouette_score
 from cucim.clara import CuImage
 
 
+RGB_BLACK = (0, 0, 0)
+
+
 class WSI:
     def __init__(
         self,
@@ -26,15 +29,15 @@ class WSI:
         self.thumb = self._create_wsi_thumbnail()
         self.thumb_size = (self.thumb.shape[1], self.thumb.shape[0])
 
-    def iter_first_section_bgr(
-        self, window_size: int, overlap_ratio: float
+    def iter_section_bgr(
+        self, index: int, window_size: int, overlap_ratio: float
     ) -> Iterator[Tuple[np.ndarray, domain.Coords]]:
         assert 0 <= overlap_ratio < 1, "overlap_ratio должен быть в диапазоне [0, 1)"
 
-        first_bound = self.extract_first_biopsy_bound()
+        bound = self.extract_biopsy_bound(index)
 
-        x_start, y_start = int(first_bound.start.x), int(first_bound.start.y)
-        w, h = map(int, first_bound.size())
+        x_start, y_start = int(bound.start.x), int(bound.start.y)
+        w, h = map(int, bound.size())
 
         stride = int(window_size * (1 - overlap_ratio))
 
@@ -63,7 +66,7 @@ class WSI:
         scale_x = self.thumb_size[0] / self.wsi_size[0]
         scale_y = self.thumb_size[1] / self.wsi_size[1]
 
-        for box in bounds:
+        for i, box in enumerate(bounds):
             x1 = int(box.start.x * scale_x)
             y1 = int(box.start.y * scale_y)
             x2 = int(box.end.x * scale_x)
@@ -71,10 +74,19 @@ class WSI:
 
             cv2.rectangle(img, (x1, y1), (x2, y2), (255, 0, 0), 3)
 
-        return img
+            text_pos = (x1 + 5, y1 + 30)
+            cv2.putText(
+                img,
+                str(i),
+                text_pos,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.0,
+                RGB_BLACK,
+                2,
+                cv2.LINE_AA,
+            )
 
-    def extract_first_biopsy_section(self) -> np.ndarray:
-        return self.extract_biopsy_section(0)
+        return img
 
     def extract_biopsy_section(self, index: int) -> np.ndarray:
         bound = self.extract_biopsy_bound(index)
@@ -101,15 +113,11 @@ class WSI:
 
         return sections
 
-    def extract_first_biopsy_bound(self) -> domain.Box:
-        return self.extract_biopsy_bound(0)
-
     def extract_biopsy_bound(self, index: int) -> domain.Box:
         return self.extract_biopsy_bounds()[index]
 
     def extract_biopsy_bounds(self) -> list[domain.Box]:
         clusters = self._cluster_biopsies(self.thumb)
-
         return self._extract_biopsy_bounds(clusters, self.thumb_size)
 
     def _extract_biopsy_bounds(
@@ -133,7 +141,7 @@ class WSI:
 
             biopsy_regions.append(box)
 
-        return sorted(biopsy_regions, key=lambda x: (x.start.y, x.start.x))
+        return sorted(biopsy_regions, key=lambda x: (x.start.x, x.start.y))
 
     def _detect_tissue_regions(self, img: np.ndarray):
         hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
