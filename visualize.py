@@ -13,8 +13,8 @@ matplotlib.use("Agg")
 
 
 class Extractor(Protocol):
-    def extract_first_biopsy_bound(self) -> domain.Box: ...
-    def extract_first_biopsy_section(self) -> np.ndarray: ...
+    def extract_biopsy_bound(self, index: int) -> domain.Box: ...
+    def extract_biopsy_section(self, index: int) -> np.ndarray: ...
 
 
 class Visualizer:
@@ -26,8 +26,16 @@ class Visualizer:
         predictions: dict[str, list[domain.Prediction]],
         target_class: Optional[str] = None,
     ) -> np.ndarray:
-        section = self.extractor.extract_first_biopsy_section()
-        first_bound = self.extractor.extract_first_biopsy_bound()
+        return self.visualize_section_with_predictions(0, predictions, target_class)
+
+    def visualize_section_with_predictions(
+        self,
+        section_index: int,
+        predictions: dict[str, list[domain.Prediction]],
+        target_class: Optional[str] = None,
+    ) -> np.ndarray:
+        section = self.extractor.extract_biopsy_section(section_index)
+        first_bound = self.extractor.extract_biopsy_bound(section_index)
 
         if target_class is not None:
             predictions = {
